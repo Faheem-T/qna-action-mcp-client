@@ -2,6 +2,9 @@
   "name": "qna-action-mcp-client",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
   "private": true,
   "devDependencies": {
     "@types/bun": "latest"
@@ -10,6 +13,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@google/genai": "^1.34.0",
     "@modelcontextprotocol/sdk": "^1.25.1"
   }
 }
