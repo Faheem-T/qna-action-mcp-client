@@ -1,6 +1,5 @@
 import { MCPClient } from "./Client";
-
-const MCP_SERVER_URL = "http://localhost:3000/mcp";
+import { MCP_SERVER_URL } from "./utils/loadEnv";
 
 async function main() {
   const mcpClient = new MCPClient();

@@ -174,7 +174,7 @@ Failure to follow any of these rules is considered an incorrect response.
         },
       });
 
-      console.log(inspect(response));
+      // console.log(inspect(response));
 
       const tempWarn = console.warn;
       console.warn = () => {};
@@ -250,7 +250,7 @@ Failure to follow any of these rules is considered an incorrect response.
             },
           });
 
-          console.log(inspect(response));
+          // console.log(inspect(response));
 
           const tempWarn = console.warn;
           console.warn = () => {};
@@ -277,6 +277,8 @@ Failure to follow any of these rules is considered an incorrect response.
       process.stdout.write(prompt);
     }
   };
+
+  newChatLoop = async () => {};
 
   cleanup = async () => {
     await this.mcp.close();
