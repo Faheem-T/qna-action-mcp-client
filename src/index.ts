@@ -8,6 +8,9 @@ async function main() {
   const mcpClient = new MCPClient();
   try {
     await mcpClient.connectToServer(MCP_SERVER_URL);
+
+    console.log("System prompt:");
+
     await mcpClient.chatLoop();
   } catch (e) {
     console.error("Error:", e);
