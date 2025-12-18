@@ -266,7 +266,6 @@ Failure to follow any of these rules is considered an incorrect response.
   };
 
   chatLoop = async () => {
-    console.log("\nMCP Client Started!");
     const prompt = "\nYou: ";
     process.stdout.write(prompt);
     for await (const message of console) {
