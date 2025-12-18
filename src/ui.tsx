@@ -12,6 +12,21 @@ interface Message {
 
 const client = new MCPClient();
 
+const GradientTitle = () => (
+    <Box
+        borderStyle="double"
+        borderColor="cyan"
+        paddingX={2}
+        paddingY={1}
+        marginBottom={1}
+        justifyContent="center"
+    >
+        <Text color="cyan" bold>
+            🤖 QnA Action MCP Client
+        </Text>
+    </Box>
+);
+
 export const ChatLoop = () => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -29,52 +44,77 @@ export const ChatLoop = () => {
   }, []);
 
   async function onSubmit(query: string) {
-    setMessages([...messages, { type: "user", content: query }]);
+    if (!query.trim()) return;
+    
+    setMessages((prev) => [...prev, { type: "user", content: query }]);
     setInput("");
     setClientResponseLoading(true);
-    const response = await client.processQuery(query);
-    setMessages([...messages, { type: "client", content: response! }]);
-    setClientResponseLoading(false);
+    
+    try {
+        const response = await client.processQuery(query);
+        setMessages((prev) => [...prev, { type: "client", content: response! }]);
+    } catch (error) {
+        setMessages((prev) => [...prev, { type: "client", content: "Error: Failed to get response." }]);
+    } finally {
+        setClientResponseLoading(false);
+    }
   }
 
   if (loading) {
     return (
-      <Text>
+      <Box height="100%" flexDirection="column" alignItems="center" justifyContent="center">
         <Text color="green">
-          <Spinner type="simpleDotsScrolling" />
+          <Spinner type="dots" /> Connecting to MCP Server...
         </Text>
-        {" Client Loading"}
-      </Text>
+      </Box>
     );
   }
 
   return (
-    <Box flexDirection="column">
-      {messages.map(({ type, content }) => {
-        return (
-          <Text color={type == "user" ? "white" : "magenta"}>{content}</Text>
-        );
-      })}
-      <Box flexDirection="row">
-        {clientResponseLoading ? (
-          <Text>
-            <Text color="green">
-              <Spinner type="simpleDotsScrolling" />
+    <Box flexDirection="column" padding={1} height="100%">
+      <GradientTitle />
+
+      <Box flexDirection="column" flexGrow={1} marginBottom={1}>
+        {messages.map((msg, index) => (
+          <Box
+            key={index}
+            flexDirection="column"
+            alignSelf={msg.type === "user" ? "flex-end" : "flex-start"}
+            marginBottom={1}
+          >
+            <Box
+                borderStyle="round"
+                borderColor={msg.type === "user" ? "green" : "blue"}
+                paddingX={1}
+                paddingY={0}
+            >
+                <Text color={msg.type === "user" ? "green" : "white"}>
+                    {msg.content}
+                </Text>
+            </Box>
+            <Text color="gray" dimColor>
+                {msg.type === "user" ? "You" : "Assistant"}
             </Text>
-            {" Loading response"}
-          </Text>
-        ) : (
-          <>
-            <Text>{"> "}</Text>
-            <TextInput
-              value={input}
-              onChange={setInput}
-              onSubmit={(value) => {
-                onSubmit(value);
-              }}
-            />
-          </>
+          </Box>
+        ))}
+        
+        {clientResponseLoading && (
+            <Box alignSelf="flex-start" marginBottom={1}>
+                <Text color="yellow">
+                    <Spinner type="dots" /> Thinking...
+                </Text>
+            </Box>
         )}
+      </Box>
+
+      <Box borderStyle="single" borderColor="gray" paddingX={1}>
+        <Text color="green">{"> "}</Text>
+        <TextInput
+          value={input}
+          onChange={setInput}
+          onSubmit={onSubmit}
+          placeholder="Type your question here..."
+        />
       </Box>
     </Box>
   );
