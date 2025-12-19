@@ -278,8 +278,6 @@ Failure to follow any of these rules is considered an incorrect response.
     }
   };
 
-  newChatLoop = async () => {};
-
   cleanup = async () => {
     await this.mcp.close();
   };
