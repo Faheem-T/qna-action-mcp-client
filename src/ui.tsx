@@ -15,7 +15,7 @@ interface Message {
   time: Date;
 }
 
-const client = new MCPClient("gemini-3-flash");
+const client = new MCPClient("gemini-2.0-flash-lite");
 
 const MESSAGE_BOX_STYLES = {
   user: { borderColor: "#00FF00", textColor: "#FFFFFF", label: "You" },
@@ -147,7 +147,7 @@ export const ChatLoop = () => {
     );
   }
 
-  const messageMaxWidth = Math.floor(width * 0.6);
+  const messageMaxWidth = Math.floor(width * 0.8);
   const inputHeight = 4;
 
   return (

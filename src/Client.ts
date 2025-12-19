@@ -259,7 +259,7 @@ Failure to follow any of these rules is considered an incorrect response.
         }
       }
 
-      return finalText.join("\n");
+      return finalText.join("\n\n");
     } catch (err) {
       console.error("Error when processing query\n", err);
     }
