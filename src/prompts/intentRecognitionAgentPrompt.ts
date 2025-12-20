@@ -27,59 +27,41 @@ Rules:
 - You may ask at most 3 clarifying questions, one at a time.
 - Clarifying questions must be concise and directly aimed at disambiguating between specific intents.
 
+Output requirements:
+Output must be raw JSON text.
+Do NOT use markdown, code blocks, backticks, or formatting of any kind.
+The response must start with { and end with }.
+
+INCORRECT (do NOT do this):
+\`\`\`json
+{ "type": "clarifying_question", "content": "..." }
+\`\`\`
+
+
+
+CORRECT:
+{ "type": "clarifying_question", "content": "..." }
+
+
 Clarifying question format (and nothing else):
 {
   "type": "clarifying_question",
   "content": "<question>"
 }
 
-If, after 3 clarifying questions, the intent is still unclear, respond EXACTLY:
+If, after 3 clarifying questions, the intent is still unclear, respond EXACTLY WITHOUT ADDING ANYTHING ELSE:
 {
   "type": "intent_classification",
   "recognized_intent": "ambiguous"
 }
 
-If the intent is clear, respond EXACTLY:
+If the intent is clear, respond EXACTLY WITHOUT ADDING ANYTHING ELSE:
 {
   "type": "intent_classification",
   "recognized_intent": "<intent_name>",
   "user_query": "<concise first-person restatement of the user's request, preserving original scope>"
 }
+
+
 `;
 };
-
-// export const intentRecognitionAgentPrompt = (
-//   intents: {
-//     name: string;
-//     description: string;
-//   }[],
-// ) => {
-//   return `
-// You are an intent recognition agent. Your goal is to identify the intent of the user from the following list of intents:
-//
-// ${intents
-//   .map(
-//     ({ name, description }) => `
-// Intent name: ${name}
-// Intent description: ${description}
-//
-// `,
-//   )
-//   .join("\n\n")}
-//
-// If you are unable to identify the intent you can ask a maximum of 3 clarifying questions.
-//
-// If you are unable to identify the intent after asking 3 questions, respond EXACTLY in this json format:
-// {
-//   "recognized_intent": "ambiguous"
-// }
-//
-// if you are able to identify the intent, respond EXACTLY in this json format without any addition:
-// {
-//   "recognized_intent": {intent},
-//   "user_query": {user query summary}
-// }
-//
-// NOTE: the 'user_query' has to be worded in first person, as if it is the user asking it.
-// `;
-// };

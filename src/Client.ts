@@ -65,6 +65,7 @@ export class MCPClient {
       contents: this.intentAgentHistory,
       config: {
         systemInstruction: systemPrompt,
+        responseMimeType: "application/json",
       },
     });
     // console.log(inspect(response));
@@ -73,6 +74,8 @@ export class MCPClient {
       parts: [{ text: response.text }],
       role: "model",
     });
+
+    console.log("Response", response.text);
 
     const jsonResponse = JSON.parse(response.text ?? "");
 
