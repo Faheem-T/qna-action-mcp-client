@@ -95,7 +95,8 @@ export const ChatLoop = () => {
     setClientResponseLoading(true);
 
     try {
-      const response = await client.processQuery(query);
+      // const response = await client.processQuery(query);
+      const response = await client.intentAgent(query);
       setMessages((prev) => [
         ...prev,
         {

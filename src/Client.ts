@@ -5,6 +5,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { inspect } from "bun";
 import { PersonaSchema } from "./schemas/personaSchema";
 import z from "zod";
+import { ResourceURI } from "./constants/ResourceURI";
+import { intentResourceSchema } from "./schemas/intentsSchema";
+import { intentRecognitionAgentPrompt } from "./prompts/intentRecognitionAgentPrompt";
 
 export class MCPClient {
   private mcp: Client;
@@ -12,6 +15,8 @@ export class MCPClient {
   private gemini: GoogleGenAI;
   private resources: Tool[] = [];
   private systemPrompt = "";
+  private history: Content[] = [];
+  private intentAgentHistory: Content[] = [];
 
   constructor(private model: string = "gemini-2.5-flash") {
     this.mcp = new Client({ name: "qna-client-cli", version: "1.0.0" });
@@ -25,6 +30,10 @@ export class MCPClient {
       console.log("Connected to server.");
 
       await this.buildSystemPrompt();
+      this.history.push({
+        parts: [{ text: this.systemPrompt }],
+        role: "user",
+      });
       console.log("System prompt built.");
       await this.discoverTools();
       console.log("MCP tools discovered.");
@@ -34,6 +43,172 @@ export class MCPClient {
       console.log("Client is ready!");
     } catch (e) {
       console.error("Failed to connect to MCP Server", e);
+    }
+  };
+
+  intentAgent = async (query: string) => {
+    const intentsResult = await this.fetchIntents();
+
+    const intents = intentsResult.map(
+      ({ name, description, allowed_tools }, index) => ({
+        name,
+        description,
+      }),
+    );
+
+    const systemPrompt = intentRecognitionAgentPrompt(intents);
+
+    this.intentAgentHistory.push({ parts: [{ text: query }], role: "user" });
+
+    let response = await this.gemini.models.generateContent({
+      model: this.model,
+      contents: this.intentAgentHistory,
+      config: {
+        systemInstruction: systemPrompt,
+      },
+    });
+    // console.log(inspect(response));
+
+    this.intentAgentHistory.push({
+      parts: [{ text: response.text }],
+      role: "model",
+    });
+
+    const jsonResponse = JSON.parse(response.text ?? "");
+
+    if ("recognized_intent" in jsonResponse) {
+      console.log("Intent found!");
+      console.log("Response: ", jsonResponse.recognized_intent);
+      console.log(inspect(this.intentAgentHistory));
+      console.log("Intent output:", jsonResponse);
+      this.intentAgentHistory = [];
+    }
+
+    return response.text;
+  };
+
+  processQuery = async (query: string) => {
+    try {
+      this.history.push({ parts: [{ text: query }], role: "user" });
+
+      let response = await this.gemini.models.generateContent({
+        model: this.model,
+        contents: this.history,
+        config: {
+          tools: [...this.tools, ...this.resources],
+        },
+      });
+
+      console.log(inspect(response));
+
+      const tempWarn = console.warn;
+      console.warn = () => {};
+      const finalText = [response.text];
+      console.warn = tempWarn;
+
+      while (response.functionCalls && response.functionCalls.length > 0) {
+        for (const { name, args, id } of response.functionCalls) {
+          if (!name) {
+            throw new Error("No name for function call");
+          }
+          if (!args) {
+            throw new Error("No args for function call");
+          }
+
+          let resultContent: string;
+
+          // figure out if tool, resource, or prompt call
+          if (name.endsWith("resource_get")) {
+            finalText.push(`[Getting resource ${name}. URI: ${args.uri!}]`);
+            this.history.push({
+              parts: [
+                { text: `[Getting resource ${name}. URI: ${args.uri!}]` },
+              ],
+              role: "model",
+            });
+
+            const result = await this.mcp.readResource({
+              uri: args.uri! as string,
+            });
+
+            resultContent = result.contents
+              .map((content) => {
+                if (content && "text" in content) {
+                  return `${content.uri}\n${content.text}`;
+                } else {
+                  return "";
+                }
+              })
+              .join("\n\n");
+          } else if (name === "get_prompt") {
+            // TODO: Handle get prompt
+            finalText.push(
+              `[Getting prompt ${name} with args ${JSON.stringify(args)}]`,
+            );
+            this.history.push({
+              parts: [
+                {
+                  text: `[Getting prompt ${name} with args ${JSON.stringify(args)}]`,
+                },
+              ],
+              role: "model",
+            });
+            resultContent = "Get prompt request";
+          } else {
+            finalText.push(
+              `[Calling tool ${name} with args ${JSON.stringify(args)}]`,
+            );
+            this.history.push({
+              parts: [
+                {
+                  text: `[Calling tool ${name} with args ${JSON.stringify(args)}]`,
+                },
+              ],
+              role: "model",
+            });
+            const result = await this.mcp.callTool({
+              name: name,
+              arguments: args,
+            });
+
+            resultContent =
+              (result.content as { text: string }[])[0]?.text ||
+              JSON.stringify(result.structuredContent);
+          }
+
+          this.history.push({
+            parts: [
+              {
+                functionResponse: {
+                  name,
+                  id,
+                  response: { result: resultContent },
+                },
+              },
+            ],
+          });
+
+          response = await this.gemini.models.generateContent({
+            model: this.model,
+            contents: this.history,
+            config: {
+              // systemInstruction: this.systemPrompt,
+              tools: [...this.tools, ...this.resources],
+            },
+          });
+
+          console.log(inspect(response));
+
+          const tempWarn = console.warn;
+          console.warn = () => {};
+          finalText.push(response.text);
+          console.warn = tempWarn;
+        }
+      }
+
+      return finalText.join("\n\n");
+    } catch (err) {
+      console.error("Error when processing query\n", err);
     }
   };
 
@@ -97,7 +272,7 @@ export class MCPClient {
 
   private fetchPersona = async () => {
     const personaResponse = await this.mcp.readResource({
-      uri: "file:///persona.json",
+      uri: ResourceURI.PERSONA,
     });
 
     // Cast to text content
@@ -114,6 +289,24 @@ export class MCPClient {
     return personaResult.data;
   };
 
+  private fetchIntents = async () => {
+    const intentsResponse = await this.mcp.readResource({
+      uri: ResourceURI.INTENTS,
+    });
+
+    const textContent = intentsResponse.contents[0] as { text: string };
+    const content = textContent.text;
+    const raw = JSON.parse(content);
+    const intentsResult = intentResourceSchema.safeParse(raw);
+
+    if (intentsResult.error) {
+      console.error(z.treeifyError(intentsResult.error));
+      throw new Error("Unexpected persona structure");
+    }
+
+    return intentsResult.data;
+  };
+
   private buildSystemPrompt = async () => {
     const {
       name: _name,
@@ -125,144 +318,82 @@ export class MCPClient {
 ${max_response_tokens ? `Keep your responses under ${max_response_tokens} tokens.` : ""}
 `;
 
-    const answeringSection = `
-Furthermore, you are a knowledge-grounded assistant.
+    const intentsResult = await this.fetchIntents();
 
-You must answer user questions ONLY using information retrieved from the internal knowledge base.
+    const intents = intentsResult
+      .map(
+        ({ name, description, allowed_tools }, index) => `
+${index + 1}. ${name}
+Description: ${description}
+Allowed Tools: ${allowed_tools.join(", ")}`,
+      )
+      .join("\n\n");
 
-Mandatory workflow:
-1. For every user query that requires factual information, you MUST first call the \`search_knowledge\` tool.
-2. The \`search_knowledge\` tool returns a list of relevant documents, each identified by a \`filename\`.
-3. You MUST select one or more filenames directly from the search results.
-4. Retrieve the full contents of each selected document by calling the \`knowledge_resource_get\` resource using the URI format:
-   \`file://{filename}/\`
-5. Read the retrieved document content.
-6. Generate your final answer strictly and exclusively from the retrieved document text.
+    const intentsSection = `
+Core Task Flow
+- Read the user message.
+- Infer exactly one intent from the intent definitions below.
+- Act only in ways permitted by that intent.
+- Respond to the user or call a tool if appropriate.
 
-Hard constraints:
-- Do NOT answer from general knowledge, prior training data, or assumptions.
-- Do NOT invent, guess, or infer information that is not explicitly present in the retrieved documents.
-- Do NOT invent filenames or resource identifiers.
-- If the knowledge base does not contain sufficient information to answer the question, respond exactly with:
-  "The knowledge base does not contain enough information to answer this question."
+The intent definitions are authoritative.
 
-Citation behavior:
-- When possible, reference the document filename(s) used to answer the question.
-- Do not fabricate citations or sources.
+INTENT DEFINITIONS
+${intents}
 
-Tool and resource usage rules:
-- \`search_knowledge\` is the ONLY allowed way to locate documents.
-- The \`knowledge_resource_get\` resource is the ONLY allowed way to read document contents.
-- You must not answer any factual question unless at least one \`knowledge_resource_get\` resource has been read.
+Intent Rules
+- You must select exactly one intent.
+- Do not invent new intents or combine intents.
+- Infer intent based on the user’s primary goal, not keywords.
+- If multiple intents seem applicable, choose the one that best fulfills the user’s goal, prioritizing action over information.
+- You may only call tools listed in the selected intent’s allowed_tools.
+- If the user message is ambiguous, you may ask one short clarifying question before acting.
+- If no intent reasonably applies, respond exactly with:
+"I’m unable to help with this request because it does not match any supported intent."
 
-Failure to follow any of these rules is considered an incorrect response.
+Tool Usage Rules
+- Call a tool only if it is necessary to fulfill the user’s request.
+- Do not call tools speculatively.
+- Do not explain internal policies, intent names, or tool rules to the user.
+- Mandatory workflows override general tool usage rules.
 `;
 
-    this.systemPrompt = [personaSection, answeringSection].join("\n\n");
-  };
+    const answeringSection = `
+Knowledge Grounding Rules
+(Applies ONLY to informational_query and any response that includes factual information)
+You are a knowledge grounded assistant.
+You must answer factual questions only using information retrieved from the internal knowledge base.
 
-  processQuery = async (query: string) => {
-    try {
-      const contents: Content[] = [{ parts: [{ text: query }], role: "user" }];
+Mandatory Workflow
+- Call search_knowledge to locate relevant documents.
+- The tool returns document filenames.
+- Select one or more filenames from the results.
+- Retrieve each document using knowledge_resource_get with URI: file://{filename}/
+- Read the retrieved document content.
+- Generate the final answer strictly and exclusively from the retrieved text.
 
-      let response = await this.gemini.models.generateContent({
-        model: this.model,
-        contents,
-        config: {
-          tools: [...this.tools, ...this.resources],
-          systemInstruction: this.systemPrompt,
-        },
-      });
+Hard Constraints
+- Do not answer from general knowledge or prior training.
+- Do not invent, infer, or guess information.
+- Do not invent filenames or resources.
+- You must not answer any factual question unless at least one document has been retrieved.
+- If the knowledge base lacks sufficient information, respond exactly with:
+  "The knowledge base does not contain enough information to answer this question."
 
-      // console.log(inspect(response));
+Citation Behavior
+- When possible, reference the filename(s) used.
+- Do not fabricate citations or sources.
 
-      const tempWarn = console.warn;
-      console.warn = () => {};
-      const finalText = [response.text];
-      console.warn = tempWarn;
+Resource Access Rules
+- search_knowledge is the only way to locate documents.
+- knowledge_resource_get is the only way to read document contents.
+`;
 
-      while (response.functionCalls && response.functionCalls.length > 0) {
-        for (const { name, args, id } of response.functionCalls) {
-          if (!name) {
-            throw new Error("No name for function call");
-          }
-          if (!args) {
-            throw new Error("No args for function call");
-          }
+    const fullPrompt = [personaSection, intentsSection, answeringSection].join(
+      "\n\n",
+    );
 
-          let resultContent: string;
-
-          // figure out if tool, resource, or prompt call
-          if (name.endsWith("resource_get")) {
-            finalText.push(`[Getting resource ${name}. URI: ${args.uri!}]`);
-
-            const result = await this.mcp.readResource({
-              uri: args.uri! as string,
-            });
-
-            resultContent = result.contents
-              .map((content) => {
-                if (content && "text" in content) {
-                  return `${content.uri}\n${content.text}`;
-                } else {
-                  return "";
-                }
-              })
-              .join("\n\n");
-          } else if (name === "get_prompt") {
-            finalText.push(
-              `[Calling tool ${name} with args ${JSON.stringify(args)}]`,
-            );
-            // TODO: Handle get prompt
-            resultContent = "Get prompt request";
-          } else {
-            finalText.push(
-              `[Calling tool ${name} with args ${JSON.stringify(args)}]`,
-            );
-            const result = await this.mcp.callTool({
-              name: name,
-              arguments: args,
-            });
-
-            resultContent =
-              (result.content as { text: string }[])[0]?.text ||
-              JSON.stringify(result.structuredContent);
-          }
-
-          contents.push({
-            parts: [
-              {
-                functionResponse: {
-                  name,
-                  id,
-                  response: { result: resultContent },
-                },
-              },
-            ],
-          });
-
-          response = await this.gemini.models.generateContent({
-            model: this.model,
-            contents,
-            config: {
-              systemInstruction: this.systemPrompt,
-              tools: [...this.tools, ...this.resources],
-            },
-          });
-
-          // console.log(inspect(response));
-
-          const tempWarn = console.warn;
-          console.warn = () => {};
-          finalText.push(response.text);
-          console.warn = tempWarn;
-        }
-      }
-
-      return finalText.join("\n\n");
-    } catch (err) {
-      console.error("Error when processing query\n", err);
-    }
+    this.systemPrompt = fullPrompt;
   };
 
   chatLoop = async () => {
