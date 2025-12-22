@@ -6,9 +6,6 @@ import {
   useRenderer,
 } from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
-import { MCPClient } from "./Client";
-import { MCP_SERVER_URL } from "./utils/loadEnv";
-import { Orchestrator } from "./Orchestrator";
 import { orchestrator } from "./di";
 
 interface Message {
@@ -17,7 +14,6 @@ interface Message {
   time: Date;
 }
 
-// const client = new MCPClient("gemini-2.0-flash-lite");
 const client = orchestrator;
 
 const MESSAGE_BOX_STYLES = {
