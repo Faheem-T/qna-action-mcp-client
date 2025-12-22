@@ -15,7 +15,7 @@ const gemini = new GoogleGenAI({});
 const intentRecognitionAgent = new IntentRecognitionAgent(mcp, gemini);
 await intentRecognitionAgent.setupAgent();
 
-const mainAgent = new MainAgent();
-// TODO: connect to server
+const mainAgent = new MainAgent(mcp, gemini);
+await mainAgent.setupAgent();
 
 export const orchestrator = new Orchestrator(intentRecognitionAgent, mainAgent);

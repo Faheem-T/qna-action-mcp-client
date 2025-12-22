@@ -15,10 +15,16 @@ export class Orchestrator {
         console.log("Intent found!");
         console.log("Response: ", response);
         this._intent = response.recognized_intent;
+        if (response.recognized_intent !== "ambiguous") {
+          await this._mainAgent.setSystemPrompt(this._intent);
+          return this._mainAgent.processQuery((response as any).user_query);
+        }
       } else {
         return response.content;
       }
     }
+
+    return this._mainAgent.processQuery(query);
   };
 
   connectToServer = async () => {
