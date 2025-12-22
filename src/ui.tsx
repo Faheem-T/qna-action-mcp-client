@@ -33,7 +33,7 @@ const GradientTitle = () => (
 export const ChatLoop = () => {
   const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [clientResponseLoading, setClientResponseLoading] = useState(false);
@@ -43,19 +43,6 @@ export const ChatLoop = () => {
   );
 
   useEffect(() => {
-    client
-      .connectToServer()
-      .then(() => {
-        setLoading(false);
-        setConnectionError(null);
-      })
-      .catch((error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : "Connection failed";
-        setConnectionError(errorMessage);
-        setLoading(false);
-      });
-
     client.on("fetching document", (uri: string) => {
       setMessages((prev) => [
         ...prev,

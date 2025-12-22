@@ -7,6 +7,14 @@ import { mainAgentPrompt } from "../prompts/mainAgentPrompt";
 import { PersonaSchema } from "../schemas/personaSchema";
 import { EventEmitter } from "node:events";
 
+const mainAgentResponseSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("response"), content: z.string() }),
+  z.object({ type: z.literal("intent_shift_detected"), reason: z.string() }),
+  z.object({ type: z.literal("error"), message: z.string() }),
+]);
+
+type MainAgentResponseType = z.infer<typeof mainAgentResponseSchema>;
+
 export class MainAgent extends EventEmitter {
   private _intents: {
     name: string;
@@ -36,7 +44,7 @@ export class MainAgent extends EventEmitter {
     console.log("[Main Agent] Agent Setup Complete");
   };
 
-  processQuery = async (query: string) => {
+  processQuery = async (query: string): Promise<MainAgentResponseType> => {
     try {
       this._history.push({ parts: [{ text: query }], role: "user" });
 
@@ -147,9 +155,21 @@ export class MainAgent extends EventEmitter {
         }
       }
 
-      return finalText.join("\n\n").trim();
+      const result = mainAgentResponseSchema.safeParse(
+        JSON.parse(finalText.join("\n\n").trim()),
+      );
+
+      if (!result.success) {
+        console.error(
+          "Error when parsing main agent response",
+          z.treeifyError(result.error),
+        );
+        return { type: "error", message: "Something unexpected happened" };
+      }
+      return result.data;
     } catch (err) {
       console.error("Error when processing query\n", err);
+      return { type: "error", message: "Something unexpected happened" };
     }
   };
 
