@@ -8,6 +8,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { MCPClient } from "./Client";
 import { MCP_SERVER_URL } from "./utils/loadEnv";
+import { Orchestrator } from "./Orchestrator";
+import { orchestrator } from "./di";
 
 interface Message {
   type: "user" | "client";
@@ -15,7 +17,8 @@ interface Message {
   time: Date;
 }
 
-const client = new MCPClient("gemini-2.0-flash-lite");
+// const client = new MCPClient("gemini-2.0-flash-lite");
+const client = orchestrator;
 
 const MESSAGE_BOX_STYLES = {
   user: { borderColor: "#00FF00", textColor: "#FFFFFF", label: "You" },
@@ -44,7 +47,7 @@ export const ChatLoop = () => {
 
   useEffect(() => {
     client
-      .connectToServer(MCP_SERVER_URL)
+      .connectToServer()
       .then(() => {
         setLoading(false);
         setConnectionError(null);
@@ -57,7 +60,7 @@ export const ChatLoop = () => {
       });
 
     return () => {
-      client.cleanup();
+      // client.cleanup();
     };
   }, []);
 
@@ -96,7 +99,7 @@ export const ChatLoop = () => {
 
     try {
       // const response = await client.processQuery(query);
-      const response = await client.intentAgent(query);
+      const response = await client.handleQuery(query);
       setMessages((prev) => [
         ...prev,
         {

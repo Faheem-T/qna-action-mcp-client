@@ -90,7 +90,13 @@ export class MCPClient {
     return response.text;
   };
 
-  processQuery = async (query: string) => {
+  processQuery = async (intent: string, query: string) => {
+    const intents = await this.fetchIntents();
+
+    if (!intents.find(({ name }) => name === intent)) {
+      throw new Error(`Unknown intent ${intent}`);
+    }
+
     try {
       this.history.push({ parts: [{ text: query }], role: "user" });
 
