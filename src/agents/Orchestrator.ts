@@ -1,12 +1,21 @@
 import type { IntentRecognitionAgent } from "./IntentRecognitionAgent";
 import type { MainAgent } from "./MainAgent";
+import { EventEmitter } from "node:events";
 
-export class Orchestrator {
+export class Orchestrator extends EventEmitter {
   private _intent: undefined | string;
   constructor(
     private _intentRecognitionAgent: IntentRecognitionAgent,
     private _mainAgent: MainAgent,
-  ) {}
+  ) {
+    super();
+    this._mainAgent.on("fetching document", (...args) => {
+      this.emit("fetching document", ...args);
+    });
+    this._mainAgent.on("calling tool", (...args) => {
+      this.emit("calling tool", ...args);
+    });
+  }
 
   handleQuery = async (query: string) => {
     if (!this._intent) {

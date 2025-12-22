@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { orchestrator } from "./di";
 
 interface Message {
-  type: "user" | "client";
+  type: "user" | "client" | "notification";
   content: string;
   time: Date;
 }
@@ -19,6 +19,7 @@ const client = orchestrator;
 const MESSAGE_BOX_STYLES = {
   user: { borderColor: "#00FF00", textColor: "#FFFFFF", label: "You" },
   client: { borderColor: "#0000FF", textColor: "#FFFFFF", label: "Assistant" },
+  notification: { textColor: "#F4B92F", label: "" },
 } as const;
 
 const SPINNERS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -54,6 +55,28 @@ export const ChatLoop = () => {
         setConnectionError(errorMessage);
         setLoading(false);
       });
+
+    client.on("fetching document", (uri: string) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          content: `Fetching document: ${uri}`,
+          type: "notification",
+          time: new Date(),
+        },
+      ]);
+    });
+
+    client.on("calling tool", (name: string, args: string) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          content: `calling tool ${name} with args ${args}`,
+          type: "notification",
+          time: new Date(),
+        },
+      ]);
+    });
 
     return () => {
       // client.cleanup();

@@ -5,8 +5,9 @@ import { intentResourceSchema } from "../schemas/intentsSchema";
 import z from "zod";
 import { mainAgentPrompt } from "../prompts/mainAgentPrompt";
 import { PersonaSchema } from "../schemas/personaSchema";
+import { EventEmitter } from "node:events";
 
-export class MainAgent {
+export class MainAgent extends EventEmitter {
   private _intents: {
     name: string;
     description: string;
@@ -21,7 +22,9 @@ export class MainAgent {
     private _mcp: Client,
     private _ai: GoogleGenAI,
     private model: string = "gemini-2.5-flash",
-  ) {}
+  ) {
+    super();
+  }
 
   setupAgent = async () => {
     await this._registerIntents();
@@ -46,10 +49,14 @@ export class MainAgent {
         },
       });
 
-      const tempWarn = console.warn;
-      console.warn = () => {};
-      const finalText = [response.text];
-      console.warn = tempWarn;
+      const finalText = [];
+      if (response.text) {
+        finalText.push(response.text);
+        this._history.push({
+          parts: [{ text: response.text }],
+          role: "model",
+        });
+      }
 
       while (response.functionCalls && response.functionCalls.length > 0) {
         for (const { name, args, id } of response.functionCalls) {
@@ -63,8 +70,8 @@ export class MainAgent {
           let resultContent: string;
 
           // figure out if tool, resource, or prompt call
-          if (name.endsWith("resource_get")) {
-            finalText.push(`[Getting resource ${name}. URI: ${args.uri!}]`);
+          if (name.trim() === "get_knowledge_base_document") {
+            this.emit("fetching document", args.uri);
             this._history.push({
               parts: [
                 { text: `[Getting resource ${name}. URI: ${args.uri!}]` },
@@ -81,28 +88,16 @@ export class MainAgent {
                 if (content && "text" in content) {
                   return `${content.uri}\n${content.text}`;
                 } else {
+                  console.warn(`No content in ${content.uri}`);
                   return "";
                 }
               })
               .join("\n\n");
           } else if (name === "get_prompt") {
-            // TODO: Handle get prompt
-            finalText.push(
-              `[Getting prompt ${name} with args ${JSON.stringify(args)}]`,
-            );
-            this._history.push({
-              parts: [
-                {
-                  text: `[Getting prompt ${name} with args ${JSON.stringify(args)}]`,
-                },
-              ],
-              role: "model",
-            });
-            resultContent = "Get prompt request";
+            resultContent = "Getting prompt";
+            console.log("get prompt request");
           } else {
-            finalText.push(
-              `[Calling tool ${name} with args ${JSON.stringify(args)}]`,
-            );
+            this.emit("calling tool", name, JSON.stringify(args));
             this._history.push({
               parts: [
                 {
@@ -142,14 +137,17 @@ export class MainAgent {
             },
           });
 
-          const tempWarn = console.warn;
-          console.warn = () => {};
-          finalText.push(response.text);
-          console.warn = tempWarn;
+          if (response.text) {
+            finalText.push(response.text);
+            this._history.push({
+              parts: [{ text: response.text }],
+              role: "model",
+            });
+          }
         }
       }
 
-      return finalText.join("\n\n");
+      return finalText.join("\n\n").trim();
     } catch (err) {
       console.error("Error when processing query\n", err);
     }
@@ -216,41 +214,24 @@ export class MainAgent {
   };
 
   private _registerResources = async () => {
-    const resourceResponse = await this._mcp.listResources();
-
-    resourceResponse.resources.forEach(
-      ({
-        name,
-        description,
-        title,
-        uri,
-        mimeType,
-        icons,
-        annotations,
-        _meta,
-      }) => {
-        this._resources.push({
-          functionDeclarations: [
-            {
-              name: `${name}_resource_get`,
-              description,
-              parameters: {
-                type: Type.OBJECT,
-                description: "Get resource parameters",
-                properties: {
-                  uri: {
-                    type: Type.STRING,
-                    description: "URI of the resource to get",
-                    enum: [uri],
-                  },
-                },
-                required: ["uri"],
+    this._resources.push({
+      functionDeclarations: [
+        {
+          name: "get_knowledge_base_document",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              uri: {
+                type: Type.STRING,
+                description:
+                  "URI of the document to get in this format `file:///{filename}`",
               },
             },
-          ],
-        });
-      },
-    );
+            required: ["uri"],
+          },
+        },
+      ],
+    });
   };
 
   private _registerTools = async () => {

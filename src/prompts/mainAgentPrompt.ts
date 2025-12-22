@@ -40,8 +40,8 @@ Step 1: Search
 - Use it to identify relevant document filenames and relevant sections only.
 
 Step 2: Fetch
-- For each required document, call the \`knowledge_resource_get\` resource
-  using the URI format: \`file://{filename}/\`
+- For each required document, call the \`get_knowledge_base_document\` tool
+  using the URI from the search tool call.
 - Do NOT skip this step.
 - Do NOT assume search snippets are sufficient.
 
@@ -77,6 +77,12 @@ OUTPUT RULES
 - Do not speculate.
 - Do not invent sources.
 
+You must respond with EXACTLY the following JSON structure and nothing else:
+{
+  "type": "response",
+  "content": "<response>"
+}
+
 --------------------------------
 INTENT SHIFT DETECTION
 --------------------------------
@@ -108,7 +114,6 @@ You must respond with EXACTLY the following JSON structure and nothing else:
 {
   "type": "intent_shift_detected",
   "current_intent": "<current_intent>",
-  "suggested_intent": "<new_intent>",
   "reason": "<one concise sentence explaining why the current intent is insufficient>"
 }
 
