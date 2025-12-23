@@ -6,6 +6,7 @@ import z from "zod";
 import { mainAgentPrompt } from "../prompts/mainAgentPrompt";
 import { PersonaSchema } from "../schemas/personaSchema";
 import { EventEmitter } from "node:events";
+import { MCP_RESOURCE_NAMES } from "../constants/MCPResourceNames";
 
 const mainAgentResponseSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("response"), content: z.string() }),
@@ -25,6 +26,7 @@ export class MainAgent extends EventEmitter {
   private _tools: Tool[] = [];
   private _resources: Tool[] = [];
   private _systemPrompt: string | undefined;
+  private _currentIntent: string | undefined;
 
   constructor(
     private _mcp: Client,
@@ -82,7 +84,9 @@ export class MainAgent extends EventEmitter {
             this.emit("fetching document", args.uri);
             this._history.push({
               parts: [
-                { text: `[Getting resource ${name}. URI: ${args.uri!}]` },
+                {
+                  functionCall: { name, args },
+                },
               ],
               role: "model",
             });
@@ -104,16 +108,30 @@ export class MainAgent extends EventEmitter {
           } else if (name === "get_prompt") {
             resultContent = "Getting prompt";
             console.log("get prompt request");
+          } else if (name.trim() === MCP_RESOURCE_NAMES.TICKET_SCHEMA) {
+            const result = await this._mcp.readResource({
+              uri: ResourceURI.TICKET_SCHEMA,
+            });
+
+            console.log(result.contents);
+
+            resultContent = (result.contents[0] as any).text ?? "No content";
           } else {
             this.emit("calling tool", name, JSON.stringify(args));
             this._history.push({
               parts: [
                 {
-                  text: `[Calling tool ${name} with args ${JSON.stringify(args)}]`,
+                  functionCall: {
+                    name,
+                    args,
+                  },
                 },
               ],
               role: "model",
             });
+
+            console.log("args:", args);
+
             const result = await this._mcp.callTool({
               name: name,
               arguments: args,
@@ -174,6 +192,17 @@ export class MainAgent extends EventEmitter {
   };
 
   setSystemPrompt = async (intentName: string) => {
+    if (this._currentIntent && intentName.trim() !== this._currentIntent) {
+      this._currentIntent = intentName.trim();
+      this._history.push({
+        parts: [
+          {
+            text: `New intent has been recognized as ${this._currentIntent}`,
+          },
+        ],
+        role: "model",
+      });
+    }
     const { name, system_prompt, max_response_tokens } =
       await this._fetchPersona();
 
@@ -234,24 +263,31 @@ export class MainAgent extends EventEmitter {
   };
 
   private _registerResources = async () => {
-    this._resources.push({
-      functionDeclarations: [
-        {
-          name: "get_knowledge_base_document",
-          parameters: {
-            type: Type.OBJECT,
-            properties: {
-              uri: {
-                type: Type.STRING,
-                description:
-                  "URI of the document to get in this format `file:///{filename}`",
+    this._resources.push(
+      {
+        functionDeclarations: [
+          {
+            name: MCP_RESOURCE_NAMES.KNOWLEDGE_BASE_DOCUMENT,
+            parameters: {
+              type: Type.OBJECT,
+              properties: {
+                uri: {
+                  type: Type.STRING,
+                  description:
+                    "URI of the document to get in this format `file:///{filename}`",
+                },
               },
+              required: ["uri"],
             },
-            required: ["uri"],
           },
-        },
-      ],
-    });
+        ],
+      },
+      {
+        functionDeclarations: [
+          { name: MCP_RESOURCE_NAMES.TICKET_SCHEMA, parameters: {} },
+        ],
+      },
+    );
   };
 
   private _registerTools = async () => {

@@ -26,6 +26,7 @@ Rules:
 - If multiple intents are plausible and the intent cannot be determined with high confidence, ask a clarifying question.
 - You may ask at most 3 clarifying questions, one at a time.
 - Clarifying questions must be concise and directly aimed at disambiguating between specific intents.
+- Be polite when asking clarifying questions.
 
 Output requirements:
 Output must be raw JSON text.
