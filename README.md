@@ -1,6 +1,6 @@
-# qna-action-mcp-client
+# QnA Action MCP Client
 
-> **Note:** This project is expected to be used with: [qna-action-mcp-server Scripts](https://github.com/Faheem-T/qna-action-mcp-server?tab=readme-ov-file#3-scripts)
+> **Note:** This project is expected to be used with: [qna-action-mcp-server](https://github.com/Faheem-T/qna-action-mcp-server)
 
 The client for the config centered, knowledge powered Q&A and Action MCP Server.
 
