@@ -46,113 +46,139 @@ export class MainAgent extends EventEmitter {
     console.log("[Main Agent] Agent Setup Complete");
   };
 
+  // NOTE: it would be a good idea to separate the content structuring responsibility
+  // to another agent
   processQuery = async (query: string): Promise<MainAgentResponseType> => {
-    try {
-      this._history.push({ parts: [{ text: query }], role: "user" });
+    const MAX_RETRIES = 3;
+    let attempt = 0;
 
-      let response = await this._ai.models.generateContent({
-        model: this.model,
-        contents: this._history,
-        config: {
-          tools: [...this._tools, ...this._resources],
-          systemInstruction: this._systemPrompt,
-        },
-      });
+    while (attempt < MAX_RETRIES) {
+      try {
+        this._history.push({ parts: [{ text: query }], role: "user" });
 
-      const finalText = [];
-      if (response.text) {
-        finalText.push(response.text);
-        this._history.push({
-          parts: [{ text: response.text }],
-          role: "model",
+        let response = await this._ai.models.generateContent({
+          model: this.model,
+          contents: this._history,
+          config: {
+            tools: [...this._tools, ...this._resources],
+            systemInstruction: this._systemPrompt,
+          },
         });
-      }
 
-      while (response.functionCalls && response.functionCalls.length > 0) {
-        for (const { name, args, id } of response.functionCalls) {
-          if (!name) {
-            throw new Error("No name for function call");
-          }
-          if (!args) {
-            throw new Error("No args for function call");
-          }
+        while (true) {
+          // final response handling
+          if (!response.functionCalls || response.functionCalls.length === 0) {
+            if (!response.text) {
+              throw new Error("Terminal response missing text");
+            }
 
-          let resultContent: string;
+            let parsed;
+            try {
+              parsed = JSON.parse(response.text.trim());
+            } catch {
+              attempt++;
+              console.error("Invalid json from model: ", response.text);
+              this._history.push({
+                role: "user",
+                parts: [
+                  {
+                    text:
+                      "Invalid response. Return ONLY valid JSON. " +
+                      "No prose, no markdown, no explanation.",
+                  },
+                ],
+              });
+              break;
+            }
 
-          // figure out if tool, resource, or prompt call
-          if (name.trim() === "get_knowledge_base_document") {
-            this.emit("fetching document", args.uri);
+            const result = mainAgentResponseSchema.safeParse(parsed);
+
+            if (!result.success) {
+              attempt++;
+              console.error("Invalid json schema from model: ", parsed);
+              this._history.push({
+                role: "user",
+                parts: [
+                  {
+                    text:
+                      "The JSON does not match the required schema. " +
+                      "Return ONLY valid JSON that conforms exactly.",
+                  },
+                ],
+              });
+              break;
+            }
+
             this._history.push({
-              parts: [
-                {
-                  functionCall: { name, args },
-                },
-              ],
+              parts: [{ text: response.text }],
               role: "model",
             });
 
-            const result = await this._mcp.readResource({
-              uri: args.uri! as string,
-            });
+            return result.data;
+          }
 
-            resultContent = result.contents
-              .map((content) => {
-                if (content && "text" in content) {
-                  return `${content.uri}\n${content.text}`;
-                } else {
-                  console.warn(`No content in ${content.uri}`);
-                  return "";
-                }
-              })
-              .join("\n\n");
-          } else if (name === "get_prompt") {
-            resultContent = "Getting prompt";
-            console.log("get prompt request");
-          } else if (name.trim() === MCP_RESOURCE_NAMES.TICKET_SCHEMA) {
-            const result = await this._mcp.readResource({
-              uri: ResourceURI.TICKET_SCHEMA,
-            });
+          // tool call handling
+          for (const { name, args, id } of response.functionCalls) {
+            if (!name) throw new Error("No name for function call");
+            if (!args) throw new Error("No args for function call");
 
-            console.log(result.contents);
+            let resultContent: string;
 
-            resultContent = (result.contents[0] as any).text ?? "No content";
-          } else {
-            this.emit("calling tool", name, JSON.stringify(args));
+            if (name.trim() === "get_knowledge_base_document") {
+              this.emit("fetching document", args.uri);
+              this._history.push({
+                parts: [{ functionCall: { name, args } }],
+                role: "model",
+              });
+
+              const result = await this._mcp.readResource({
+                uri: args.uri! as string,
+              });
+
+              resultContent = result.contents
+                .map((content) =>
+                  content && "text" in content
+                    ? `${content.uri}\n${content.text}`
+                    : "",
+                )
+                .join("\n\n");
+            } else if (name === "get_prompt") {
+              resultContent = "Getting prompt";
+            } else if (name.trim() === MCP_RESOURCE_NAMES.TICKET_SCHEMA) {
+              const result = await this._mcp.readResource({
+                uri: ResourceURI.TICKET_SCHEMA,
+              });
+
+              resultContent = (result.contents[0] as any).text ?? "No content";
+            } else {
+              this.emit("calling tool", name, JSON.stringify(args));
+              this._history.push({
+                parts: [{ functionCall: { name, args } }],
+                role: "model",
+              });
+
+              const result = await this._mcp.callTool({
+                name,
+                arguments: args,
+              });
+
+              resultContent =
+                (result.content as { text: string }[])[0]?.text ||
+                JSON.stringify(result.structuredContent);
+            }
+
             this._history.push({
               parts: [
                 {
-                  functionCall: {
+                  functionResponse: {
                     name,
-                    args,
+                    id,
+                    response: { result: resultContent },
                   },
                 },
               ],
-              role: "model",
             });
-
-            console.log("args:", args);
-
-            const result = await this._mcp.callTool({
-              name: name,
-              arguments: args,
-            });
-
-            resultContent =
-              (result.content as { text: string }[])[0]?.text ||
-              JSON.stringify(result.structuredContent);
           }
-
-          this._history.push({
-            parts: [
-              {
-                functionResponse: {
-                  name,
-                  id,
-                  response: { result: resultContent },
-                },
-              },
-            ],
-          });
 
           response = await this._ai.models.generateContent({
             model: this.model,
@@ -162,33 +188,18 @@ export class MainAgent extends EventEmitter {
               systemInstruction: this._systemPrompt,
             },
           });
-
-          if (response.text) {
-            finalText.push(response.text);
-            this._history.push({
-              parts: [{ text: response.text }],
-              role: "model",
-            });
-          }
         }
+      } catch (err) {
+        console.error("Error when processing query\n", err);
+        break; // 🔹 ADDED
       }
-
-      const result = mainAgentResponseSchema.safeParse(
-        JSON.parse(finalText.join("\n\n").trim()),
-      );
-
-      if (!result.success) {
-        console.error(
-          "Error when parsing main agent response",
-          z.treeifyError(result.error),
-        );
-        return { type: "error", message: "Something unexpected happened" };
-      }
-      return result.data;
-    } catch (err) {
-      console.error("Error when processing query\n", err);
-      return { type: "error", message: "Something unexpected happened" };
     }
+
+    // 🔹 ADDED: deterministic failure
+    return {
+      type: "error",
+      message: "Model failed to produce valid JSON after 3 attempts",
+    };
   };
 
   setSystemPrompt = async (intentName: string) => {
