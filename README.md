@@ -1,6 +1,6 @@
 # QnA Action MCP Client
 
-> **Note:** This project is expected to be used with: [qna-action-mcp-server](https://github.com/Faheem-T/qna-action-mcp-server)
+> **Note:** This project is expected to be used with: [QnA Action MCP Server](https://github.com/Faheem-T/qna-action-mcp-server)
 
 The client for the config centered, knowledge powered Q&A and Action MCP Server.
 
