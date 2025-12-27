@@ -54,3 +54,7 @@ The client operates using an Orchestrator pattern:
 
 1.  **Intent Recognition Agent**: Analyzes the user's query to determine the intent.
 2.  **Main Agent**: Executes the appropriate action or retrieves information based on the recognized intent, utilizing tools and resources from the connected MCP server.
+
+### Architecture Diagram
+
+![Architecture Diagram](./public/architecture.png)
