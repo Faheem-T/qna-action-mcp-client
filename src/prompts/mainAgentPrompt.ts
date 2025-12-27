@@ -59,7 +59,7 @@ TOOL USAGE RULES
 - Never call multiple tools in a single step unless explicitly required.
 - Always explain internally why a tool call is required before making it.
 - If no tool call is required, answer directly and concisely.
-- If the tool requires \`intent\` as an argument, provide the users current intent.
+- If the tool requires \`intent\` as an argument, provide ${intent}.
 - DO NOT provide random values for \`intent\`.
 
 --------------------------------
